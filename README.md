@@ -4,6 +4,8 @@ A small browser app for opening an image and exploring it with **pan** and **zoo
 
 **Live site:** [panozoom.schalkneethling.com](https://panozoom.schalkneethling.com)
 
+**Progressive Web App:** Panozoom is installable from supported browsers (install / “Add to Home Screen”) and runs in a standalone window. A service worker precaches the app shell so it can open offline after you have loaded it once while online.
+
 ## What it does
 
 - **Open images** via the toolbar, a file picker, or drag-and-drop onto the canvas.
@@ -18,6 +20,7 @@ Zoom range is clamped between roughly 2% and 6400% so navigation stays usable.
 
 - [TypeScript](https://www.typescriptlang.org/)
 - [Vite+](https://viteplus.dev/) (Vite-based tooling: dev server, build, lint, test)
+- [vite-plugin-pwa](https://github.com/vite-pwa/vite-plugin-pwa) for the service worker and precaching (manifest lives in `public/site.webmanifest`)
 - A single [custom element](https://developer.mozilla.org/en-US/docs/Web/API/Web_components) (`<panozoom-app>`) that owns interaction logic; styles live in `src/style.css`.
 
 ## Development
