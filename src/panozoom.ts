@@ -24,7 +24,16 @@ export class PanoZoomApp extends HTMLElement {
   }
 
   connectedCallback() {
-    this.#addEventListeners();
+    /*
+     The spec does not guarantee that disconnectedCallback always fires
+     before a subsequent connectedCallback — in certain DOM manipulation 
+     scenarios you could end up registering a second set of listeners on 
+     top of the first without having cleaned up the previous ones.
+     Aborting first prevents that:
+    */
+    this.#abortController?.abort();
+    this.#abortController = new AbortController();
+    this.#addEventListeners(this.#abortController.signal);
     this.#applyTransform();
   }
 
@@ -506,10 +515,7 @@ export class PanoZoomApp extends HTMLElement {
     );
   };
 
-  #addEventListeners = () => {
-    this.#abortController = new AbortController();
-    const { signal } = this.#abortController;
-
+  #addEventListeners = (signal: AbortSignal) => {
     this.#handleCanvasEvents(signal);
     this.#handleScrollWheel(signal);
     this.#handlePointerEvents(signal);
