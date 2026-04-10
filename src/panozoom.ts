@@ -146,27 +146,39 @@ export class PanoZoomApp extends HTMLElement {
       throw new Error("Canvas not found");
     }
 
-    this.#canvas.addEventListener("dragover", (event: DragEvent) => {
-      event.preventDefault();
-      this.#canvas?.classList.add("drag-active");
-    }, { signal });
+    this.#canvas.addEventListener(
+      "dragover",
+      (event: DragEvent) => {
+        event.preventDefault();
+        this.#canvas?.classList.add("drag-active");
+      },
+      { signal },
+    );
 
-    this.#canvas.addEventListener("dragleave", (event: DragEvent) => {
-      // @see https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/relatedTarget
-      if (!this.#canvas?.contains(event.relatedTarget as Node)) {
+    this.#canvas.addEventListener(
+      "dragleave",
+      (event: DragEvent) => {
+        // @see https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/relatedTarget
+        if (!this.#canvas?.contains(event.relatedTarget as Node)) {
+          this.#canvas?.classList.remove("drag-active");
+        }
+      },
+      { signal },
+    );
+
+    this.#canvas.addEventListener(
+      "drop",
+      (event: DragEvent) => {
+        event.preventDefault();
         this.#canvas?.classList.remove("drag-active");
-      }
-    }, { signal });
 
-    this.#canvas.addEventListener("drop", (event: DragEvent) => {
-      event.preventDefault();
-      this.#canvas?.classList.remove("drag-active");
-
-      const file = event.dataTransfer?.files[0];
-      if (file) {
-        this.#loadFile(file);
-      }
-    }, { signal });
+        const file = event.dataTransfer?.files[0];
+        if (file) {
+          this.#loadFile(file);
+        }
+      },
+      { signal },
+    );
   };
 
   /**
@@ -197,7 +209,7 @@ export class PanoZoomApp extends HTMLElement {
     // Therefore the result of (cursorX - this.#state.tx) is the horizontal distance
     // from the left edge of the image (tx) to the cursor (cursorX). Similarly, the
     // result of (cursorY - this.#state.ty) is the vertical distance from the top
-    // edge of the image (ty) to the cursor (cursorY). The ratio is how much 
+    // edge of the image (ty) to the cursor (cursorY). The ratio is how much
     // bigger or smaller the image got, i.e., did we zoom in or out?
     // --
     // Next we multiply the horizontal distance from the left edge of the image to
@@ -225,7 +237,7 @@ export class PanoZoomApp extends HTMLElement {
 
     const canvas = this.#canvas;
 
-    canvas.addEventListener(
+    (canvas.addEventListener(
       "wheel",
       (event: WheelEvent) => {
         event.preventDefault();
@@ -269,7 +281,8 @@ export class PanoZoomApp extends HTMLElement {
         this.#zoomAround(cursorX, cursorY, factor);
       },
       { passive: false },
-    ), { signal };
+    ),
+      { signal });
   };
 
   #handlePointerEvents = (signal: AbortSignal) => {
@@ -283,40 +296,48 @@ export class PanoZoomApp extends HTMLElement {
     let pointerOrigin: { x: number; y: number } | null = null;
     let panStart = { tx: 0, ty: 0 };
 
-    canvas.addEventListener("pointerdown", (event: PointerEvent) => {
-      // A value of 0 (zero) on `event.button` indicates that the main (generally
-      // the left) button was pressed.
-      if (!this.#state.imageLoaded || event.button !== 0) {
-        return;
-      }
+    canvas.addEventListener(
+      "pointerdown",
+      (event: PointerEvent) => {
+        // A value of 0 (zero) on `event.button` indicates that the main (generally
+        // the left) button was pressed.
+        if (!this.#state.imageLoaded || event.button !== 0) {
+          return;
+        }
 
-      event.preventDefault();
+        event.preventDefault();
 
-      // This is the primary reason we are using pointerdown as opposed to
-      // mousedown, for example. By capturing the events we are funnelling
-      // all events for this pointer into our element. This avoid instances
-      // where the pointer can accidentally trigger an action in the
-      // toolbar, for example, while panning.
-      canvas.setPointerCapture(event.pointerId);
-      canvas.dataset.state = "panning";
+        // This is the primary reason we are using pointerdown as opposed to
+        // mousedown, for example. By capturing the events we are funnelling
+        // all events for this pointer into our element. This avoid instances
+        // where the pointer can accidentally trigger an action in the
+        // toolbar, for example, while panning.
+        canvas.setPointerCapture(event.pointerId);
+        canvas.dataset.state = "panning";
 
-      pointerOrigin = { x: event.clientX, y: event.clientY };
-      panStart = { tx: this.#state.tx, ty: this.#state.ty };
-    }, { signal });
+        pointerOrigin = { x: event.clientX, y: event.clientY };
+        panStart = { tx: this.#state.tx, ty: this.#state.ty };
+      },
+      { signal },
+    );
 
-    canvas.addEventListener("pointermove", (event: PointerEvent) => {
-      if (!pointerOrigin) {
-        return;
-      }
+    canvas.addEventListener(
+      "pointermove",
+      (event: PointerEvent) => {
+        if (!pointerOrigin) {
+          return;
+        }
 
-      const deltaX = event.clientX - pointerOrigin.x;
-      const deltaY = event.clientY - pointerOrigin.y;
+        const deltaX = event.clientX - pointerOrigin.x;
+        const deltaY = event.clientY - pointerOrigin.y;
 
-      this.#state.tx = panStart.tx + deltaX;
-      this.#state.ty = panStart.ty + deltaY;
+        this.#state.tx = panStart.tx + deltaX;
+        this.#state.ty = panStart.ty + deltaY;
 
-      this.#applyTransform();
-    }, { signal });
+        this.#applyTransform();
+      },
+      { signal },
+    );
 
     const stopPan = () => {
       if (!pointerOrigin) {
@@ -325,11 +346,11 @@ export class PanoZoomApp extends HTMLElement {
 
       pointerOrigin = null;
       canvas.setAttribute("data-state", this.#state.imageLoaded ? "grab" : "default");
-    }
+    };
 
     canvas.addEventListener("pointerup", stopPan, { signal });
     canvas.addEventListener("pointercancel", stopPan, { signal });
-  }
+  };
 
   #handleFileInput = (signal: AbortSignal) => {
     const fileInput: HTMLInputElement | null = this.querySelector("#file-input");
@@ -339,19 +360,27 @@ export class PanoZoomApp extends HTMLElement {
       return;
     }
 
-    openButton.addEventListener("click", () => {
-      fileInput.click();
-    }, { signal });
+    openButton.addEventListener(
+      "click",
+      () => {
+        fileInput.click();
+      },
+      { signal },
+    );
 
-    fileInput.addEventListener("change", () => {
-      if (!fileInput.files || fileInput.files.length === 0) {
-        return;
-      }
+    fileInput.addEventListener(
+      "change",
+      () => {
+        if (!fileInput.files || fileInput.files.length === 0) {
+          return;
+        }
 
-      this.#loadFile(fileInput.files[0]);
-      fileInput.value = ""; // allow re-opening same file
-    }, { signal });
-  }
+        this.#loadFile(fileInput.files[0]);
+        fileInput.value = ""; // allow re-opening same file
+      },
+      { signal },
+    );
+  };
 
   #resetZoom = () => {
     if (!this.#state.imageLoaded || !this.#canvas) {
@@ -370,13 +399,17 @@ export class PanoZoomApp extends HTMLElement {
       const stage = this.#stage;
 
       stage.style.transition = "transform 0.2s ease";
-      stage.addEventListener("transitionend", () => {
-        stage.style.transition = "";
-      }, { once: true });
+      stage.addEventListener(
+        "transitionend",
+        () => {
+          stage.style.transition = "";
+        },
+        { once: true },
+      );
     }
 
     this.#applyTransform();
-  }
+  };
 
   #zoomIn = () => {
     if (!this.#canvas) {
@@ -386,7 +419,7 @@ export class PanoZoomApp extends HTMLElement {
     const canvasX = this.#canvas.clientWidth / 2;
     const canvasY = this.#canvas.clientHeight / 2;
     this.#zoomAround(canvasX, canvasY, PanoZoomApp.#ZOOM_BTN_FAC);
-  }
+  };
 
   #zoomOut = () => {
     if (!this.#canvas) {
@@ -396,7 +429,7 @@ export class PanoZoomApp extends HTMLElement {
     const canvasX = this.#canvas.clientWidth / 2;
     const canvasY = this.#canvas.clientHeight / 2;
     this.#zoomAround(canvasX, canvasY, 1 / PanoZoomApp.#ZOOM_BTN_FAC);
-  }
+  };
 
   #handleToolbarEvents = (signal: AbortSignal) => {
     const fitToCanvasButton: HTMLButtonElement | null = this.querySelector("#btn-fit");
@@ -408,9 +441,13 @@ export class PanoZoomApp extends HTMLElement {
       return;
     }
 
-    fitToCanvasButton.addEventListener("click", () => {
-      this.#fitToViewport(true);
-    }, { signal });
+    fitToCanvasButton.addEventListener(
+      "click",
+      () => {
+        this.#fitToViewport(true);
+      },
+      { signal },
+    );
 
     const toolbar = this.querySelector(".toolbar");
 
@@ -418,52 +455,60 @@ export class PanoZoomApp extends HTMLElement {
       return;
     }
 
-    toolbar.addEventListener("click", (event: Event) => {
-      const target = event.target as HTMLElement;
+    toolbar.addEventListener(
+      "click",
+      (event: Event) => {
+        const target = event.target as HTMLElement;
 
-      if (target.matches(`#${zoomInButton.id}`)) {
-        this.#zoomIn();
-      }
+        if (target.matches(`#${zoomInButton.id}`)) {
+          this.#zoomIn();
+        }
 
-      if (target.matches(`#${zoomOutButton.id}`)) {
-        this.#zoomOut();
-      }
+        if (target.matches(`#${zoomOutButton.id}`)) {
+          this.#zoomOut();
+        }
 
-      if (target.matches(`#${resetZoomButton.id}`)) {
-        this.#resetZoom();
-      }
-    }, { signal });
-  }
+        if (target.matches(`#${resetZoomButton.id}`)) {
+          this.#resetZoom();
+        }
+      },
+      { signal },
+    );
+  };
 
   #handleKeyboardEvents = (signal: AbortSignal) => {
-    window.addEventListener("keydown", (event: KeyboardEvent) => {
-      if (!event.key) {
-        return;
-      }
-
-      switch (event.key.toLowerCase()) {
-        case "f":
-          this.#fitToViewport(true);
-          break;
-        case "1":
-          this.#resetZoom();
-          break;
-        case "+":
-        case "=":
-          this.#zoomIn();
-          break;
-        case "-":
-          this.#zoomOut();
-          break;
-        default:
+    window.addEventListener(
+      "keydown",
+      (event: KeyboardEvent) => {
+        if (!event.key) {
           return;
-      }
-    }, { signal });
-  }
+        }
+
+        switch (event.key.toLowerCase()) {
+          case "f":
+            this.#fitToViewport(true);
+            break;
+          case "1":
+            this.#resetZoom();
+            break;
+          case "+":
+          case "=":
+            this.#zoomIn();
+            break;
+          case "-":
+            this.#zoomOut();
+            break;
+          default:
+            return;
+        }
+      },
+      { signal },
+    );
+  };
 
   #addEventListeners = () => {
     this.#abortController = new AbortController();
-    const  {signal} = this.#abortController;
+    const { signal } = this.#abortController;
 
     this.#handleCanvasEvents(signal);
     this.#handleScrollWheel(signal);
