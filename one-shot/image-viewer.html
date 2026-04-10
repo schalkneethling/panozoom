@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Image Viewer</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap");
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #111113;
+        --surface: #1a1a1f;
+        --surface-2: #25252d;
+        --border: #2e2e38;
+        --border-light: #3d3d4a;
+        --text: #e8e8f0;
+        --text-muted: #8888a0;
+        --accent: #6c8fff;
+        --accent-dim: #2a3a6e;
+        --danger: #ff6b6b;
+
+        --toolbar-h: 52px;
+        --radius: 6px;
+        --font-ui: "IBM Plex Sans", sans-serif;
+        --font-mono: "IBM Plex Mono", monospace;
+      }
+
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-ui);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* ── Toolbar ─────────────────────────────────────────── */
+
+      .toolbar {
+        position: fixed;
+        inset-block-start: 0;
+        inset-inline: 0;
+        block-size: var(--toolbar-h);
+        background: var(--surface);
+        border-block-end: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-inline: 16px;
+        z-index: 100;
+        user-select: none;
+      }
+
+      .toolbar__title {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-muted);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin-inline-end: auto;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-inline-size: 340px;
+      }
+
+      .toolbar__title span {
+        color: var(--text);
+      }
+
+      .toolbar__zoom {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--text-muted);
+        min-inline-size: 52px;
+        text-align: end;
+      }
+
+      .separator {
+        inline-size: 1px;
+        block-size: 20px;
+        background: var(--border);
+        flex-shrink: 0;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text-muted);
+        font-family: var(--font-ui);
+        font-size: 12px;
+        font-weight: 400;
+        cursor: pointer;
+        white-space: nowrap;
+        transition:
+          background 0.1s,
+          color 0.1s,
+          border-color 0.1s;
+        line-height: 1;
+      }
+
+      .btn:hover {
+        background: var(--surface-2);
+        border-color: var(--border-light);
+        color: var(--text);
+      }
+
+      .btn:active {
+        background: var(--accent-dim);
+        border-color: var(--accent);
+        color: var(--text);
+      }
+
+      .btn--primary {
+        background: var(--accent-dim);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      .btn--primary:hover {
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .btn svg {
+        flex-shrink: 0;
+      }
+
+      /* ── Canvas area ──────────────────────────────────────── */
+
+      .canvas {
+        position: fixed;
+        inset-block-start: var(--toolbar-h);
+        inset-inline: 0;
+        inset-block-end: 0;
+        overflow: hidden;
+        background:
+          radial-gradient(ellipse at 30% 20%, rgba(108, 143, 255, 0.04) 0%, transparent 60%),
+          var(--bg);
+
+        /* Dot grid */
+        background-image:
+          radial-gradient(ellipse at 30% 20%, rgba(108, 143, 255, 0.04) 0%, transparent 60%),
+          radial-gradient(circle, var(--border) 1px, transparent 1px);
+        background-size:
+          100% 100%,
+          28px 28px;
+      }
+
+      .canvas:focus {
+        outline: none;
+      }
+
+      .canvas[data-state="grab"] {
+        cursor: grab;
+      }
+
+      .canvas[data-state="grabbing"] {
+        cursor: grabbing;
+      }
+
+      .canvas[data-state="default"] {
+        cursor: default;
+      }
+
+      /* ── Transform stage ──────────────────────────────────── */
+
+      .stage {
+        position: absolute;
+        inset-block-start: 0;
+        inset-inline-start: 0;
+        transform-origin: 0 0;
+        /* transform is set via JS */
+      }
+
+      .stage img {
+        display: block;
+        max-inline-size: none;
+        /* Crisp at low zoom, smooth at high */
+        image-rendering: auto;
+        border-radius: 2px;
+        box-shadow:
+          0 0 0 1px rgba(255, 255, 255, 0.06),
+          0 8px 40px rgba(0, 0, 0, 0.7),
+          0 2px 8px rgba(0, 0, 0, 0.5);
+      }
+
+      /* ── Drop overlay ─────────────────────────────────────── */
+
+      .drop-overlay {
+        position: fixed;
+        inset-block-start: var(--toolbar-h);
+        inset-inline: 0;
+        inset-block-end: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        pointer-events: none;
+        opacity: 1;
+        transition: opacity 0.2s;
+      }
+
+      .drop-overlay.hidden {
+        opacity: 0;
+      }
+
+      .drop-overlay__ring {
+        inline-size: 120px;
+        block-size: 120px;
+        border-radius: 50%;
+        border: 1.5px dashed var(--border-light);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .drop-overlay__ring svg {
+        color: var(--text-muted);
+      }
+
+      .drop-overlay__label {
+        font-size: 14px;
+        color: var(--text-muted);
+        text-align: center;
+        line-height: 1.6;
+      }
+
+      .drop-overlay__label strong {
+        display: block;
+        font-size: 16px;
+        color: var(--text);
+        font-weight: 500;
+        margin-block-end: 4px;
+      }
+
+      .drop-overlay__label kbd {
+        display: inline-block;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--text);
+        background: var(--surface-2);
+        border: 1px solid var(--border-light);
+        border-radius: 4px;
+        padding: 2px 6px;
+      }
+
+      /* Drag-active highlight */
+      .canvas.drag-active .drop-overlay__ring {
+        border-color: var(--accent);
+        border-style: solid;
+      }
+
+      .canvas.drag-active .drop-overlay__ring svg {
+        color: var(--accent);
+      }
+
+      /* ── Shortcuts panel ──────────────────────────────────── */
+
+      .shortcuts {
+        position: fixed;
+        inset-block-end: 20px;
+        inset-inline-end: 20px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 14px 16px;
+        font-size: 11px;
+        color: var(--text-muted);
+        line-height: 2;
+        z-index: 100;
+        pointer-events: none;
+      }
+
+      .shortcuts__row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        justify-content: space-between;
+      }
+
+      .shortcuts__label {
+        text-align: end;
+      }
+
+      .shortcuts kbd {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        color: var(--text);
+        background: var(--surface-2);
+        border: 1px solid var(--border-light);
+        border-radius: 4px;
+        padding: 1px 5px;
+        white-space: nowrap;
+      }
+
+      /* ── Hidden file input ────────────────────────────────── */
+
+      #file-input {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <input type="file" id="file-input" accept="image/*" aria-label="Open image file" />
+
+    <!-- Toolbar -->
+    <header class="toolbar" role="banner">
+      <p class="toolbar__title" id="file-label">Image Viewer</p>
+
+      <button class="btn btn--primary" id="btn-open" type="button">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="17 8 12 3 7 8" />
+          <line x1="12" y1="3" x2="12" y2="15" />
+        </svg>
+        Open image
+      </button>
+
+      <div class="separator" role="separator"></div>
+
+      <button class="btn" id="btn-fit" type="button" title="Fit to screen (F)">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <polyline points="15 3 21 3 21 9" />
+          <polyline points="9 21 3 21 3 15" />
+          <line x1="21" y1="3" x2="14" y2="10" />
+          <line x1="3" y1="21" x2="10" y2="14" />
+        </svg>
+        Fit
+      </button>
+
+      <button class="btn" id="btn-1x" type="button" title="Actual size (1)">1:1</button>
+
+      <div class="separator" role="separator"></div>
+
+      <button class="btn" id="btn-zoom-out" type="button" aria-label="Zoom out">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          <line x1="8" y1="11" x2="14" y2="11" />
+        </svg>
+      </button>
+
+      <span class="toolbar__zoom" id="zoom-label" aria-live="polite" aria-atomic="true">—</span>
+
+      <button class="btn" id="btn-zoom-in" type="button" aria-label="Zoom in">
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          <line x1="11" y1="8" x2="11" y2="14" />
+          <line x1="8" y1="11" x2="14" y2="11" />
+        </svg>
+      </button>
+    </header>
+
+    <!-- Main canvas -->
+    <main
+      class="canvas"
+      id="canvas"
+      data-state="default"
+      tabindex="0"
+      role="application"
+      aria-label="Image canvas. Use scroll wheel to zoom, drag to pan."
+    >
+      <div class="stage" id="stage">
+        <!-- img injected here -->
+      </div>
+
+      <!-- Empty state -->
+      <div class="drop-overlay" id="drop-overlay" aria-hidden="true">
+        <div class="drop-overlay__ring">
+          <svg
+            width="40"
+            height="40"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <polyline points="21 15 16 10 5 21" />
+          </svg>
+        </div>
+        <p class="drop-overlay__label">
+          <strong>Drop an image here</strong>
+          or click <kbd>Open image</kbd> in the toolbar
+        </p>
+      </div>
+    </main>
+
+    <!-- Shortcuts cheat-sheet -->
+    <aside class="shortcuts" aria-label="Keyboard shortcuts">
+      <div class="shortcuts__row">
+        <kbd>scroll</kbd>
+        <span class="shortcuts__label">zoom</span>
+      </div>
+      <div class="shortcuts__row">
+        <kbd>drag</kbd>
+        <span class="shortcuts__label">pan</span>
+      </div>
+      <div class="shortcuts__row">
+        <kbd>F</kbd>
+        <span class="shortcuts__label">fit</span>
+      </div>
+      <div class="shortcuts__row">
+        <kbd>1</kbd>
+        <span class="shortcuts__label">100%</span>
+      </div>
+      <div class="shortcuts__row">
+        <kbd>+</kbd> / <kbd>−</kbd>
+        <span class="shortcuts__label">zoom ±</span>
+      </div>
+    </aside>
+
+    <script type="module">
+      // ── Constants ─────────────────────────────────────────────
+
+      const ZOOM_MIN = 0.02;
+      const ZOOM_MAX = 64;
+      const ZOOM_STEP = 0.12; // wheel sensitivity
+      const ZOOM_BTN_FAC = 1.25; // factor per button click
+
+      // ── State ─────────────────────────────────────────────────
+
+      const state = {
+        scale: 1,
+        tx: 0, // translation x (px)
+        ty: 0, // translation y (py)
+        imgW: 0,
+        imgH: 0,
+        imageLoaded: false,
+      };
+
+      // ── DOM refs ──────────────────────────────────────────────
+
+      const canvas = document.getElementById("canvas");
+      const stage = document.getElementById("stage");
+      const zoomLabel = document.getElementById("zoom-label");
+      const fileLabel = document.getElementById("file-label");
+      const dropOverlay = document.getElementById("drop-overlay");
+      const fileInput = document.getElementById("file-input");
+
+      // ── Transform apply ───────────────────────────────────────
+
+      function applyTransform() {
+        stage.style.transform = `translate(${state.tx}px, ${state.ty}px) scale(${state.scale})`;
+        zoomLabel.textContent = `${Math.round(state.scale * 100)}%`;
+      }
+
+      // ── Fit image to viewport ─────────────────────────────────
+
+      function fitToViewport(animated = false) {
+        if (!state.imageLoaded) return;
+
+        const vw = canvas.clientWidth;
+        const vh = canvas.clientHeight;
+        const padding = 48;
+
+        const scaleX = (vw - padding * 2) / state.imgW;
+        const scaleY = (vh - padding * 2) / state.imgH;
+        const scale = Math.min(scaleX, scaleY, 1); // don't upscale past 100%
+
+        state.scale = scale;
+        state.tx = (vw - state.imgW * scale) / 2;
+        state.ty = (vh - state.imgH * scale) / 2;
+
+        if (animated) {
+          stage.style.transition = "transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94)";
+          applyTransform();
+          stage.addEventListener(
+            "transitionend",
+            () => {
+              stage.style.transition = "";
+            },
+            { once: true },
+          );
+        } else {
+          applyTransform();
+        }
+      }
+
+      // ── Zoom around a point ───────────────────────────────────
+
+      /**
+       * Zoom toward (cx, cy) which are coordinates relative to
+       * the canvas element (not the page).
+       */
+      function zoomAround(cx, cy, factor) {
+        const newScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, state.scale * factor));
+        const ratio = newScale / state.scale;
+
+        state.tx = cx - ratio * (cx - state.tx);
+        state.ty = cy - ratio * (cy - state.ty);
+        state.scale = newScale;
+
+        applyTransform();
+      }
+
+      // ── Load image ────────────────────────────────────────────
+
+      function loadFile(file) {
+        if (!file || !file.type.startsWith("image/")) return;
+
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+
+        img.alt = file.name;
+
+        img.addEventListener("load", () => {
+          state.imgW = img.naturalWidth;
+          state.imgH = img.naturalHeight;
+          state.imageLoaded = true;
+
+          // Remove previous image if any
+          stage.replaceChildren(img);
+
+          URL.revokeObjectURL(url);
+
+          dropOverlay.classList.add("hidden");
+          fileLabel.innerHTML = `<span>${file.name}</span>`;
+          canvas.setAttribute("data-state", "grab");
+
+          fitToViewport();
+        });
+
+        img.addEventListener("error", () => {
+          URL.revokeObjectURL(url);
+          alert("Could not load this image.");
+        });
+
+        img.src = url;
+      }
+
+      // ── Pointer pan ───────────────────────────────────────────
+
+      let pointerOrigin = null;
+      let panStart = { tx: 0, ty: 0 };
+
+      canvas.addEventListener("pointerdown", (event) => {
+        if (!state.imageLoaded) return;
+        if (event.button !== 0) return;
+
+        // Prevent text selection during drag
+        event.preventDefault();
+
+        canvas.setPointerCapture(event.pointerId);
+        canvas.setAttribute("data-state", "grabbing");
+
+        pointerOrigin = { x: event.clientX, y: event.clientY };
+        panStart = { tx: state.tx, ty: state.ty };
+      });
+
+      canvas.addEventListener("pointermove", (event) => {
+        if (pointerOrigin === null) return;
+
+        const dx = event.clientX - pointerOrigin.x;
+        const dy = event.clientY - pointerOrigin.y;
+
+        state.tx = panStart.tx + dx;
+        state.ty = panStart.ty + dy;
+
+        applyTransform();
+      });
+
+      const stopPan = () => {
+        if (pointerOrigin === null) return;
+        pointerOrigin = null;
+        if (state.imageLoaded) {
+          canvas.setAttribute("data-state", "grab");
+        }
+      };
+
+      canvas.addEventListener("pointerup", stopPan);
+      canvas.addEventListener("pointercancel", stopPan);
+
+      // ── Scroll wheel zoom ─────────────────────────────────────
+
+      canvas.addEventListener(
+        "wheel",
+        (event) => {
+          event.preventDefault();
+
+          const rect = canvas.getBoundingClientRect();
+          const cx = event.clientX - rect.left;
+          const cy = event.clientY - rect.top;
+
+          // Normalise delta across browsers / trackpads
+          const delta =
+            event.deltaMode === 1
+              ? event.deltaY * 20 // line mode
+              : event.deltaY; // pixel mode
+
+          // Pinch gesture on trackpad sends ctrlKey=true with precise deltas
+          const factor = event.ctrlKey
+            ? 1 - delta * 0.01 // pinch — more sensitive
+            : 1 - delta * ZOOM_STEP * 0.01;
+
+          zoomAround(cx, cy, factor);
+        },
+        { passive: false },
+      );
+
+      // ── Button controls ───────────────────────────────────────
+
+      document.getElementById("btn-open").addEventListener("click", () => {
+        fileInput.click();
+      });
+
+      fileInput.addEventListener("change", () => {
+        if (fileInput.files.length > 0) {
+          loadFile(fileInput.files[0]);
+          fileInput.value = ""; // allow re-opening same file
+        }
+      });
+
+      document.getElementById("btn-fit").addEventListener("click", () => {
+        fitToViewport(true);
+      });
+
+      document.getElementById("btn-1x").addEventListener("click", () => {
+        if (!state.imageLoaded) return;
+        const vw = canvas.clientWidth;
+        const vh = canvas.clientHeight;
+        state.scale = 1;
+        state.tx = (vw - state.imgW) / 2;
+        state.ty = (vh - state.imgH) / 2;
+        stage.style.transition = "transform 0.2s ease";
+        applyTransform();
+        stage.addEventListener(
+          "transitionend",
+          () => {
+            stage.style.transition = "";
+          },
+          { once: true },
+        );
+      });
+
+      document.getElementById("btn-zoom-in").addEventListener("click", () => {
+        const cx = canvas.clientWidth / 2;
+        const cy = canvas.clientHeight / 2;
+        zoomAround(cx, cy, ZOOM_BTN_FAC);
+      });
+
+      document.getElementById("btn-zoom-out").addEventListener("click", () => {
+        const cx = canvas.clientWidth / 2;
+        const cy = canvas.clientHeight / 2;
+        zoomAround(cx, cy, 1 / ZOOM_BTN_FAC);
+      });
+
+      // ── Keyboard shortcuts ────────────────────────────────────
+
+      window.addEventListener("keydown", (event) => {
+        // Don't fire shortcuts when focus is inside an input
+        if (event.target.matches("input, textarea, select")) return;
+
+        switch (event.key.toLowerCase()) {
+          case "f":
+            fitToViewport(true);
+            break;
+
+          case "1":
+            document.getElementById("btn-1x").click();
+            break;
+
+          case "+":
+          case "=": {
+            const cx = canvas.clientWidth / 2;
+            const cy = canvas.clientHeight / 2;
+            zoomAround(cx, cy, ZOOM_BTN_FAC);
+            break;
+          }
+
+          case "-": {
+            const cx = canvas.clientWidth / 2;
+            const cy = canvas.clientHeight / 2;
+            zoomAround(cx, cy, 1 / ZOOM_BTN_FAC);
+            break;
+          }
+        }
+      });
+
+      // ── Drag & drop ───────────────────────────────────────────
+
+      canvas.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        canvas.classList.add("drag-active");
+      });
+
+      canvas.addEventListener("dragleave", (event) => {
+        // Only react to leaving the canvas itself, not child elements
+        if (!canvas.contains(event.relatedTarget)) {
+          canvas.classList.remove("drag-active");
+        }
+      });
+
+      canvas.addEventListener("drop", (event) => {
+        event.preventDefault();
+        canvas.classList.remove("drag-active");
+
+        const file = event.dataTransfer.files[0];
+        if (file) loadFile(file);
+      });
+
+      // ── Resize: re-fit if canvas changes size ─────────────────
+
+      const resizeObserver = new ResizeObserver(() => {
+        if (state.imageLoaded) {
+          // Don't re-fit aggressively — only on first load.
+          // After that the user controls the viewport.
+        }
+      });
+
+      resizeObserver.observe(canvas);
+
+      // ── Initial state ─────────────────────────────────────────
+
+      applyTransform();
+    </script>
+  </body>
+</html>

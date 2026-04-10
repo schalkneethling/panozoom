@@ -1,0 +1,315 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap");
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #111113;
+  --surface: #1a1a1f;
+  --surface-2: #25252d;
+  --border: #2e2e38;
+  --border-light: #3d3d4a;
+  --text: #e8e8f0;
+  --text-muted: #8888a0;
+  --accent: #6c8fff;
+  --accent-dim: #2a3a6e;
+  --danger: #ff6b6b;
+
+  --toolbar-h: 52px;
+  --radius: 6px;
+  --font-ui: "IBM Plex Sans", sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Toolbar ─────────────────────────────────────────── */
+
+.toolbar {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: var(--toolbar-h);
+  background: var(--surface);
+  border-block-end: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-inline: 16px;
+  z-index: 100;
+  user-select: none;
+}
+
+.toolbar__title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-inline-end: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-inline-size: 340px;
+}
+
+.toolbar__title span {
+  color: var(--text);
+}
+
+.toolbar__zoom {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  min-inline-size: 52px;
+  text-align: end;
+}
+
+.separator {
+  inline-size: 1px;
+  block-size: 20px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.1s,
+    color 0.1s,
+    border-color 0.1s;
+  line-height: 1;
+
+  svg {
+    pointer-events: none;
+  }
+}
+
+.btn:hover {
+  background: var(--surface-2);
+  border-color: var(--border-light);
+  color: var(--text);
+}
+
+.btn:active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.btn--primary {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn--primary:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn svg {
+  flex-shrink: 0;
+}
+
+/* ── Canvas area ──────────────────────────────────────── */
+
+.canvas {
+  position: fixed;
+  inset-block-start: var(--toolbar-h);
+  inset-inline: 0;
+  inset-block-end: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(108, 143, 255, 0.04) 0%, transparent 60%), var(--bg);
+
+  /* Dot grid */
+  background-image:
+    radial-gradient(ellipse at 30% 20%, rgba(108, 143, 255, 0.04) 0%, transparent 60%),
+    radial-gradient(circle, var(--border) 1px, transparent 1px);
+  background-size:
+    100% 100%,
+    28px 28px;
+}
+
+.canvas:focus {
+  outline: none;
+}
+
+.canvas[data-state="grab"] {
+  cursor: grab;
+}
+
+.canvas[data-state="panning"] {
+  cursor: grabbing;
+}
+
+.canvas[data-state="default"] {
+  cursor: default;
+}
+
+/* ── Transform stage ──────────────────────────────────── */
+
+.stage {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  transform-origin: 0 0;
+  /* transform is set via JS */
+}
+
+.stage img {
+  display: block;
+  max-inline-size: none;
+  /* Crisp at low zoom, smooth at high */
+  image-rendering: auto;
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 8px 40px rgba(0, 0, 0, 0.7),
+    0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Drop overlay ─────────────────────────────────────── */
+
+.drop-overlay {
+  position: fixed;
+  inset-block-start: var(--toolbar-h);
+  inset-inline: 0;
+  inset-block-end: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.2s;
+}
+
+.drop-overlay.hidden {
+  opacity: 0;
+}
+
+.drop-overlay__ring {
+  inline-size: 120px;
+  block-size: 120px;
+  border-radius: 50%;
+  border: 1.5px dashed var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drop-overlay__ring svg {
+  color: var(--text-muted);
+}
+
+.drop-overlay__label {
+  font-size: 14px;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.6;
+}
+
+.drop-overlay__label strong {
+  display: block;
+  font-size: 16px;
+  color: var(--text);
+  font-weight: 500;
+  margin-block-end: 4px;
+}
+
+.drop-overlay__label kbd {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+/* Drag-active highlight */
+.canvas.drag-active .drop-overlay__ring {
+  border-color: var(--accent);
+  border-style: solid;
+}
+
+.canvas.drag-active .drop-overlay__ring svg {
+  color: var(--accent);
+}
+
+/* ── Shortcuts panel ──────────────────────────────────── */
+
+.shortcuts {
+  position: fixed;
+  inset-block-end: 20px;
+  inset-inline-end: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 2;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.shortcuts__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.shortcuts__label {
+  text-align: end;
+}
+
+.shortcuts kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.visually-hidden {
+  block-size: 1px;
+  clip-path: inset(50%);
+  inline-size: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+}

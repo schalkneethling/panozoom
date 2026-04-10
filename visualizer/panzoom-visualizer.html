@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pan & Zoom Math Visualizer</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;700&display=swap');
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg:         #0d0e12;
+      --surface:    #13141a;
+      --surface-2:  #1c1d26;
+      --border:     #252633;
+      --border-2:   #32344a;
+
+      --text:       #e2e4f0;
+      --muted:      #5a5c78;
+      --muted-2:    #7b7d9e;
+
+      --canvas-col: #4af0c4;   /* teal  — canvas boundary  */
+      --image-col:  #7c6dfa;   /* violet — image rectangle */
+      --cursor-col: #f0c44a;   /* amber  — cursor / pivot  */
+      --tx-col:     #fa6d6d;   /* red    — tx offset       */
+      --ty-col:     #6daaff;   /* blue   — ty offset       */
+      --formula:    #c8ffa0;   /* lime   — formula result  */
+
+      --mono: 'JetBrains Mono', monospace;
+      --sans: 'Syne', sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Layout ──────────────────────────────────────── */
+
+    .app {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      grid-template-rows: auto 1fr;
+      height: 100%;
+    }
+
+    /* ── Header ──────────────────────────────────────── */
+
+    .header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 20px;
+      border-block-end: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .header__title {
+      font-family: var(--sans);
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: var(--text);
+    }
+
+    .header__sub {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .legend {
+      display: flex;
+      gap: 16px;
+      margin-inline-start: auto;
+      align-items: center;
+    }
+
+    .legend__item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: var(--muted-2);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .legend__dot {
+      inline-size: 8px;
+      block-size: 8px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    /* ── Canvas panel ─────────────────────────────────── */
+
+    .canvas-panel {
+      position: relative;
+      overflow: hidden;
+      background: var(--bg);
+      background-image: radial-gradient(circle, var(--border) 1px, transparent 1px);
+      background-size: 24px 24px;
+      cursor: crosshair;
+    }
+
+    .canvas-panel canvas {
+      position: absolute;
+      inset: 0;
+    }
+
+    .hint {
+      position: absolute;
+      inset-block-end: 16px;
+      inset-inline-start: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    /* ── Math panel ───────────────────────────────────── */
+
+    .math-panel {
+      border-inline-start: 1px solid var(--border);
+      background: var(--surface);
+      overflow-y: auto;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .math-section {
+      padding: 16px 18px;
+      border-block-end: 1px solid var(--border);
+    }
+
+    .math-section__title {
+      font-family: var(--sans);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-block-end: 12px;
+    }
+
+    /* ── State grid ───────────────────────────────────── */
+
+    .state-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    .state-cell {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 10px;
+    }
+
+    .state-cell__label {
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-block-end: 4px;
+    }
+
+    .state-cell__value {
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    /* ── Formula block ────────────────────────────────── */
+
+    .formula-block {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .formula-line {
+      display: grid;
+      grid-template-columns: 90px 1fr;
+      gap: 8px;
+      align-items: baseline;
+      font-size: 11px;
+      line-height: 1.8;
+    }
+
+    .formula-line__label {
+      color: var(--muted-2);
+      text-align: end;
+      font-size: 10px;
+    }
+
+    .formula-line__expr {
+      color: var(--text);
+    }
+
+    .formula-line__expr .op {
+      color: var(--muted-2);
+    }
+
+    .formula-line__expr .num {
+      color: var(--text);
+    }
+
+    .formula-line__expr.result {
+      color: var(--formula);
+      font-weight: 500;
+    }
+
+    .formula-line__expr .tx  { color: var(--tx-col);     }
+    .formula-line__expr .ty  { color: var(--ty-col);     }
+    .formula-line__expr .cu  { color: var(--cursor-col); }
+    .formula-line__expr .im  { color: var(--image-col);  }
+
+    .divider {
+      block-size: 1px;
+      background: var(--border-2);
+      margin-block: 6px;
+    }
+
+    /* ── Interaction mode indicator ───────────────────── */
+
+    .mode-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: var(--muted-2);
+      padding: 4px 10px;
+      border: 1px solid var(--border-2);
+      border-radius: 20px;
+      background: var(--surface-2);
+      margin-block-end: 10px;
+    }
+
+    .mode-badge__dot {
+      inline-size: 6px;
+      block-size: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.15s;
+    }
+
+    .mode-badge--zoom  .mode-badge__dot { background: var(--cursor-col); }
+    .mode-badge--pan   .mode-badge__dot { background: var(--image-col);  }
+    .mode-badge--idle  .mode-badge__dot { background: var(--muted);      }
+
+    /* ── Controls ─────────────────────────────────────── */
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      padding: 14px 18px;
+      border-block-end: 1px solid var(--border);
+    }
+
+    .btn-reset {
+      flex: 1;
+      padding: 7px;
+      border-radius: 4px;
+      border: 1px solid var(--border-2);
+      background: var(--surface-2);
+      color: var(--muted-2);
+      font-family: var(--mono);
+      font-size: 11px;
+      cursor: pointer;
+      transition: color 0.1s, border-color 0.1s;
+    }
+
+    .btn-reset:hover {
+      color: var(--text);
+      border-color: var(--canvas-col);
+    }
+
+    /* ── Scrollbar ────────────────────────────────────── */
+
+    .math-panel::-webkit-scrollbar { inline-size: 4px; }
+    .math-panel::-webkit-scrollbar-track { background: transparent; }
+    .math-panel::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- Header -->
+  <header class="header">
+    <h1 class="header__title">Pan &amp; Zoom Math</h1>
+    <p class="header__sub">Scroll to zoom · Drag to pan</p>
+    <nav class="legend" aria-label="Colour legend">
+      <div class="legend__item">
+        <div class="legend__dot" style="background:var(--canvas-col)"></div>
+        Canvas
+      </div>
+      <div class="legend__item">
+        <div class="legend__dot" style="background:var(--image-col)"></div>
+        Image rect
+      </div>
+      <div class="legend__item">
+        <div class="legend__dot" style="background:var(--cursor-col)"></div>
+        Cursor / pivot
+      </div>
+      <div class="legend__item">
+        <div class="legend__dot" style="background:var(--tx-col)"></div>
+        tx
+      </div>
+      <div class="legend__item">
+        <div class="legend__dot" style="background:var(--ty-col)"></div>
+        ty
+      </div>
+    </nav>
+  </header>
+
+  <!-- Visual canvas -->
+  <main class="canvas-panel" id="canvas-panel">
+    <canvas id="viz"></canvas>
+    <p class="hint">scroll to zoom · drag to pan</p>
+  </main>
+
+  <!-- Math panel -->
+  <aside class="math-panel" aria-label="Live math">
+
+    <div class="controls">
+      <button class="btn-reset" id="btn-reset" type="button">↺ Reset to fit</button>
+    </div>
+
+    <!-- Mode indicator -->
+    <div class="math-section" style="padding-block-end:12px;">
+      <div class="math-section__title">Interaction</div>
+      <div class="mode-badge mode-badge--idle" id="mode-badge">
+        <div class="mode-badge__dot"></div>
+        <span id="mode-label">idle</span>
+      </div>
+    </div>
+
+    <!-- Current state -->
+    <div class="math-section">
+      <div class="math-section__title">Current state</div>
+      <div class="state-grid">
+        <div class="state-cell">
+          <div class="state-cell__label">scale</div>
+          <div class="state-cell__value" id="val-scale" style="color:var(--image-col)">—</div>
+        </div>
+        <div class="state-cell">
+          <div class="state-cell__label">tx</div>
+          <div class="state-cell__value" id="val-tx" style="color:var(--tx-col)">—</div>
+        </div>
+        <div class="state-cell">
+          <div class="state-cell__label">ty</div>
+          <div class="state-cell__value" id="val-ty" style="color:var(--ty-col)">—</div>
+        </div>
+        <div class="state-cell">
+          <div class="state-cell__label">img W</div>
+          <div class="state-cell__value" id="val-imgw" style="color:var(--muted-2)">—</div>
+        </div>
+        <div class="state-cell">
+          <div class="state-cell__label">img H</div>
+          <div class="state-cell__value" id="val-imgh" style="color:var(--muted-2)">—</div>
+        </div>
+        <div class="state-cell">
+          <div class="state-cell__label">zoom %</div>
+          <div class="state-cell__value" id="val-zoom" style="color:var(--formula)">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cursor -->
+    <div class="math-section">
+      <div class="math-section__title">Cursor (canvas-local)</div>
+      <div class="formula-block">
+        <div class="formula-line">
+          <span class="formula-line__label">clientX − rect.left</span>
+          <span class="formula-line__expr"><span id="cx-expr" class="cu">—</span></span>
+        </div>
+        <div class="formula-line">
+          <span class="formula-line__label">clientY − rect.top</span>
+          <span class="formula-line__expr"><span id="cy-expr" class="cu">—</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Zoom math -->
+    <div class="math-section">
+      <div class="math-section__title">Zoom formula</div>
+      <div class="formula-block">
+
+        <div class="formula-line">
+          <span class="formula-line__label">factor</span>
+          <span class="formula-line__expr" id="f-factor">—</span>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="formula-line">
+          <span class="formula-line__label">scale × factor</span>
+          <span class="formula-line__expr" id="f-naive">—</span>
+        </div>
+        <div class="formula-line">
+          <span class="formula-line__label">newScale</span>
+          <span class="formula-line__expr result" id="f-newscale">—</span>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="formula-line">
+          <span class="formula-line__label">newScale / scale</span>
+          <span class="formula-line__expr result" id="f-ratio">—</span>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="formula-line">
+          <span class="formula-line__label">cx − tx</span>
+          <span class="formula-line__expr" id="f-cx-tx">—</span>
+        </div>
+        <div class="formula-line">
+          <span class="formula-line__label">ratio × (cx−tx)</span>
+          <span class="formula-line__expr" id="f-ratio-cx">—</span>
+        </div>
+        <div class="formula-line">
+          <span class="formula-line__label">newTx</span>
+          <span class="formula-line__expr result" id="f-newtx">—</span>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="formula-line">
+          <span class="formula-line__label">cy − ty</span>
+          <span class="formula-line__expr" id="f-cy-ty">—</span>
+        </div>
+        <div class="formula-line">
+          <span class="formula-line__label">ratio × (cy−ty)</span>
+          <span class="formula-line__expr" id="f-ratio-cy">—</span>
+        </div>
+        <div class="formula-line">
+          <span class="formula-line__label">newTy</span>
+          <span class="formula-line__expr result" id="f-newty">—</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Pan math -->
+    <div class="math-section">
+      <div class="math-section__title">Pan formula</div>
+      <div class="formula-block">
+        <div class="formula-line">
+          <span class="formula-line__label">startTx</span>
+          <span class="formula-line__expr" id="p-starttx">—</span>
+        </div>
+        <div class="formula-line">
+          <span class="formula-line__label">clientX − originX</span>
+          <span class="formula-line__expr" id="p-dx">—</span>
+        </div>
+        <div class="formula-line">
+          <span class="formula-line__label">newTx</span>
+          <span class="formula-line__expr result" id="p-newtx">—</span>
+        </div>
+        <div class="divider"></div>
+        <div class="formula-line">
+          <span class="formula-line__label">startTy</span>
+          <span class="formula-line__expr" id="p-startty">—</span>
+        </div>
+        <div class="formula-line">
+          <span class="formula-line__label">clientY − originY</span>
+          <span class="formula-line__expr" id="p-dy">—</span>
+        </div>
+        <div class="formula-line">
+          <span class="formula-line__label">newTy</span>
+          <span class="formula-line__expr result" id="p-newty">—</span>
+        </div>
+      </div>
+    </div>
+
+  </aside>
+</div>
+
+<script type="module">
+
+  // ── Constants ──────────────────────────────────────────
+
+  const ZOOM_MIN     = 0.05;
+  const ZOOM_MAX     = 20;
+  const ZOOM_STEP    = 0.12;
+  const ZOOM_BTN_FAC = 1.25;
+
+  // Simulated image dimensions (representative, not a real image)
+  const IMG_W = 800;
+  const IMG_H = 450;
+
+  // Visual style
+  const COLOR = {
+    canvas:  '#4af0c4',
+    image:   '#7c6dfa',
+    cursor:  '#f0c44a',
+    tx:      '#fa6d6d',
+    ty:      '#6daaff',
+    origin:  '#ffffff',
+    grid:    '#1c1d26',
+  };
+
+  // ── State ──────────────────────────────────────────────
+
+  const state = {
+    scale: 1,
+    tx: 0,
+    ty: 0,
+    cx: 0,   // last known cursor x (canvas-local)
+    cy: 0,   // last known cursor y (canvas-local)
+    lastFactor: null,
+    lastNewScale: null,
+    lastRatio: null,
+  };
+
+  // Pan state
+  let panOrigin  = null;
+  let panStart   = { tx: 0, ty: 0 };
+
+  // ── DOM refs ───────────────────────────────────────────
+
+  const panel    = document.getElementById('canvas-panel');
+  const canvas   = document.getElementById('viz');
+  const ctx      = canvas.getContext('2d');
+  const modeBadge  = document.getElementById('mode-badge');
+  const modeLabel  = document.getElementById('mode-label');
+
+  // State display
+  const elScale  = document.getElementById('val-scale');
+  const elTx     = document.getElementById('val-tx');
+  const elTy     = document.getElementById('val-ty');
+  const elImgW   = document.getElementById('val-imgw');
+  const elImgH   = document.getElementById('val-imgh');
+  const elZoom   = document.getElementById('val-zoom');
+
+  // Cursor
+  const elCxExpr = document.getElementById('cx-expr');
+  const elCyExpr = document.getElementById('cy-expr');
+
+  // Zoom formula
+  const elFactor    = document.getElementById('f-factor');
+  const elNaive     = document.getElementById('f-naive');
+  const elNewscale  = document.getElementById('f-newscale');
+  const elRatio     = document.getElementById('f-ratio');
+  const elCxTx      = document.getElementById('f-cx-tx');
+  const elRatioCx   = document.getElementById('f-ratio-cx');
+  const elNewTx     = document.getElementById('f-newtx');
+  const elCyTy      = document.getElementById('f-cy-ty');
+  const elRatioCy   = document.getElementById('f-ratio-cy');
+  const elNewTy     = document.getElementById('f-newty');
+
+  // Pan formula
+  const elPStartTx  = document.getElementById('p-starttx');
+  const elPDx       = document.getElementById('p-dx');
+  const elPNewTx    = document.getElementById('p-newtx');
+  const elPStartTy  = document.getElementById('p-startty');
+  const elPDy       = document.getElementById('p-dy');
+  const elPNewTy    = document.getElementById('p-newty');
+
+  // ── Helpers ────────────────────────────────────────────
+
+  const f3 = n => n.toFixed(3);
+  const f2 = n => n.toFixed(2);
+  const pct = n => `${Math.round(n * 100)}%`;
+
+  function setMode(mode) {
+    modeBadge.className = `mode-badge mode-badge--${mode}`;
+    modeLabel.textContent = mode;
+  }
+
+  // ── Fit to panel ───────────────────────────────────────
+
+  function fit() {
+    const vw      = panel.clientWidth;
+    const vh      = panel.clientHeight;
+    const padding = 60;
+    const scaleX  = (vw - padding * 2) / IMG_W;
+    const scaleY  = (vh - padding * 2) / IMG_H;
+    const scale   = Math.min(scaleX, scaleY, 1);
+
+    state.scale = scale;
+    state.tx    = (vw - IMG_W * scale) / 2;
+    state.ty    = (vh - IMG_H * scale) / 2;
+
+    state.lastFactor   = null;
+    state.lastNewScale = null;
+    state.lastRatio    = null;
+
+    updateMathPanel();
+    draw();
+  }
+
+  // ── Zoom around point ──────────────────────────────────
+
+  function zoomAround(cx, cy, factor) {
+    const naive    = state.scale * factor;
+    const newScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, naive));
+    const ratio    = newScale / state.scale;
+
+    const prevTx = state.tx;
+    const prevTy = state.ty;
+
+    state.tx    = cx - ratio * (cx - state.tx);
+    state.ty    = cy - ratio * (cy - state.ty);
+    state.scale = newScale;
+
+    state.lastFactor   = factor;
+    state.lastNewScale = newScale;
+    state.lastRatio    = ratio;
+    state._naive       = naive;
+    state._prevTx      = prevTx;
+    state._prevTy      = prevTy;
+    state._zoomCx      = cx;
+    state._zoomCy      = cy;
+  }
+
+  // ── Draw ───────────────────────────────────────────────
+
+  function draw() {
+    const W = canvas.width;
+    const H = canvas.height;
+
+    ctx.clearRect(0, 0, W, H);
+
+    const imgX = state.tx;
+    const imgY = state.ty;
+    const imgW = IMG_W * state.scale;
+    const imgH = IMG_H * state.scale;
+
+    // ── Image fill ──────────────────────────────────────
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(124, 109, 250, 0.07)';
+    ctx.strokeStyle = COLOR.image;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.fillRect(imgX, imgY, imgW, imgH);
+    ctx.strokeRect(imgX, imgY, imgW, imgH);
+    ctx.restore();
+
+    // ── Image label ─────────────────────────────────────
+
+    ctx.save();
+    ctx.fillStyle = COLOR.image;
+    ctx.font = '500 10px JetBrains Mono, monospace';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`image  ${IMG_W} × ${IMG_H}  @  ${pct(state.scale)}`, imgX + 8, imgY + 8);
+    ctx.restore();
+
+    // ── tx arrow (horizontal offset from canvas left) ───
+
+    if (state.tx > 2) {
+      drawArrow(ctx, 0, imgY + imgH + 24, state.tx, imgY + imgH + 24, COLOR.tx, `tx = ${f2(state.tx)}px`);
+    } else if (state.tx < -2) {
+      drawArrow(ctx, 0, imgY + imgH + 24, state.tx, imgY + imgH + 24, COLOR.tx, `tx = ${f2(state.tx)}px`);
+    }
+
+    // ── ty arrow (vertical offset from canvas top) ──────
+
+    if (state.ty > 2) {
+      drawArrow(ctx, imgX + imgW + 24, 0, imgX + imgW + 24, state.ty, COLOR.ty, `ty = ${f2(state.ty)}px`, true);
+    } else if (state.ty < -2) {
+      drawArrow(ctx, imgX + imgW + 24, 0, imgX + imgW + 24, state.ty, COLOR.ty, `ty = ${f2(state.ty)}px`, true);
+    }
+
+    // ── Origin dot ──────────────────────────────────────
+
+    drawDot(ctx, 0, 0, 4, COLOR.origin, 'origin (0,0)', 'right', 'bottom');
+
+    // ── Cursor / zoom pivot ──────────────────────────────
+
+    drawCrosshair(ctx, state.cx, state.cy);
+
+    // ── Canvas boundary ──────────────────────────────────
+
+    ctx.save();
+    ctx.strokeStyle = COLOR.canvas;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(1, 1, W - 2, H - 2);
+    ctx.restore();
+  }
+
+  // ── Drawing utilities ──────────────────────────────────
+
+  function drawDot(ctx, x, y, r, color, label, hAlign = 'left', vAlign = 'top') {
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (label) {
+      ctx.font = '10px JetBrains Mono, monospace';
+      ctx.fillStyle = color;
+      ctx.textAlign   = hAlign === 'right' ? 'right' : 'left';
+      ctx.textBaseline = vAlign === 'bottom' ? 'bottom' : 'top';
+      const ox = hAlign === 'right' ? -8 : 8;
+      const oy = vAlign === 'bottom' ? -8 : 8;
+      ctx.fillText(label, x + ox, y + oy);
+    }
+
+    ctx.restore();
+  }
+
+  function drawCrosshair(ctx, x, y) {
+    const size = 10;
+    ctx.save();
+    ctx.strokeStyle = COLOR.cursor;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(x - size, y);
+    ctx.lineTo(x + size, y);
+    ctx.moveTo(x, y - size);
+    ctx.lineTo(x, y + size);
+    ctx.stroke();
+
+    // Outer ring
+    ctx.globalAlpha = 0.4;
+    ctx.beginPath();
+    ctx.arc(x, y, size + 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    drawDot(ctx, x, y, 2, COLOR.cursor);
+
+    // Label
+    ctx.save();
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.fillStyle = COLOR.cursor;
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`cx=${Math.round(x)}  cy=${Math.round(y)}`, x + 14, y - 4);
+    ctx.restore();
+  }
+
+  function drawArrow(ctx, x1, y1, x2, y2, color, label, vertical = false) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle   = color;
+    ctx.lineWidth   = 1;
+    ctx.setLineDash([3, 3]);
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+
+    // Arrowhead
+    const angle  = Math.atan2(y2 - y1, x2 - x1);
+    const aSize  = 5;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - aSize * Math.cos(angle - 0.4), y2 - aSize * Math.sin(angle - 0.4));
+    ctx.lineTo(x2 - aSize * Math.cos(angle + 0.4), y2 - aSize * Math.sin(angle + 0.4));
+    ctx.closePath();
+    ctx.fill();
+
+    if (label) {
+      ctx.font = '10px JetBrains Mono, monospace';
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      ctx.textAlign    = vertical ? 'left' : 'center';
+      ctx.textBaseline = vertical ? 'middle' : 'bottom';
+      ctx.fillText(label, vertical ? mx + 6 : mx, vertical ? my : my - 4);
+    }
+
+    ctx.restore();
+  }
+
+  // ── Update math panel ──────────────────────────────────
+
+  function updateMathPanel() {
+    elImgW.textContent  = `${IMG_W}px`;
+    elImgH.textContent  = `${IMG_H}px`;
+    elScale.textContent = f3(state.scale);
+    elTx.textContent    = f2(state.tx);
+    elTy.textContent    = f2(state.ty);
+    elZoom.textContent  = pct(state.scale);
+
+    elCxExpr.textContent = `${Math.round(state.cx)}px`;
+    elCyExpr.textContent = `${Math.round(state.cy)}px`;
+
+    if (state.lastFactor !== null) {
+      const s  = state._prevTx !== undefined ? state._prevTx : state.tx;
+      const cx = state._zoomCx ?? state.cx;
+      const cy = state._zoomCy ?? state.cy;
+      const prevScale = state.scale / state.lastRatio;
+
+      elFactor.textContent   = f3(state.lastFactor);
+      elNaive.textContent    = `${f3(prevScale)} × ${f3(state.lastFactor)} = ${f3(state._naive)}`;
+      elNewscale.textContent = f3(state.lastNewScale);
+      elRatio.textContent    = `${f3(state.lastNewScale)} / ${f3(prevScale)} = ${f3(state.lastRatio)}`;
+
+      const cxTx = cx - state._prevTx;
+      const cyTy = cy - state._prevTy;
+      elCxTx.textContent    = `${f2(cx)} − ${f2(state._prevTx)} = ${f2(cxTx)}`;
+      elRatioCx.textContent = `${f3(state.lastRatio)} × ${f2(cxTx)} = ${f2(state.lastRatio * cxTx)}`;
+      elNewTx.textContent   = `${f2(cx)} − ${f2(state.lastRatio * cxTx)} = ${f2(state.tx)}`;
+
+      elCyTy.textContent    = `${f2(cy)} − ${f2(state._prevTy)} = ${f2(cyTy)}`;
+      elRatioCy.textContent = `${f3(state.lastRatio)} × ${f2(cyTy)} = ${f2(state.lastRatio * cyTy)}`;
+      elNewTy.textContent   = `${f2(cy)} − ${f2(state.lastRatio * cyTy)} = ${f2(state.ty)}`;
+    } else {
+      [elFactor, elNaive, elNewscale, elRatio,
+       elCxTx, elRatioCx, elNewTx,
+       elCyTy, elRatioCy, elNewTy].forEach(el => { el.textContent = '—'; });
+    }
+  }
+
+  function updatePanPanel(dx, dy, clientX, clientY) {
+    elPStartTx.textContent = f2(panStart.tx);
+    elPDx.textContent      = `${Math.round(clientX)} − ${Math.round(panOrigin.x)} = ${f2(dx)}`;
+    elPNewTx.textContent   = `${f2(panStart.tx)} + ${f2(dx)} = ${f2(state.tx)}`;
+
+    elPStartTy.textContent = f2(panStart.ty);
+    elPDy.textContent      = `${Math.round(clientY)} − ${Math.round(panOrigin.y)} = ${f2(dy)}`;
+    elPNewTy.textContent   = `${f2(panStart.ty)} + ${f2(dy)} = ${f2(state.ty)}`;
+  }
+
+  // ── Resize canvas to panel ─────────────────────────────
+
+  function resizeCanvas() {
+    canvas.width  = panel.clientWidth;
+    canvas.height = panel.clientHeight;
+    draw();
+  }
+
+  // ── Events ─────────────────────────────────────────────
+
+  // Pointer tracking
+  panel.addEventListener('mousemove', (event) => {
+    const rect = panel.getBoundingClientRect();
+    state.cx = event.clientX - rect.left;
+    state.cy = event.clientY - rect.top;
+
+    if (panOrigin === null) {
+      draw();
+    }
+  });
+
+  // Pointer pan
+  panel.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    panel.setPointerCapture(event.pointerId);
+    setMode('pan');
+
+    panOrigin = { x: event.clientX, y: event.clientY };
+    panStart  = { tx: state.tx, ty: state.ty };
+
+    state.lastFactor = null;
+  });
+
+  panel.addEventListener('pointermove', (event) => {
+    if (panOrigin === null) return;
+
+    const dx = event.clientX - panOrigin.x;
+    const dy = event.clientY - panOrigin.y;
+
+    state.tx = panStart.tx + dx;
+    state.ty = panStart.ty + dy;
+
+    const rect = panel.getBoundingClientRect();
+    state.cx = event.clientX - rect.left;
+    state.cy = event.clientY - rect.top;
+
+    updatePanPanel(dx, dy, event.clientX, event.clientY);
+    updateMathPanel();
+    draw();
+  });
+
+  const stopPan = () => {
+    if (panOrigin === null) return;
+    panOrigin = null;
+    setMode('idle');
+  };
+
+  panel.addEventListener('pointerup',     stopPan);
+  panel.addEventListener('pointercancel', stopPan);
+
+  // Scroll zoom
+  panel.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    setMode('zoom');
+
+    const rect   = panel.getBoundingClientRect();
+    const cx     = event.clientX - rect.left;
+    const cy     = event.clientY - rect.top;
+
+    state.cx = cx;
+    state.cy = cy;
+
+    const delta  = event.deltaMode === 1 ? event.deltaY * 20 : event.deltaY;
+    const factor = event.ctrlKey
+      ? 1 - delta * 0.01
+      : 1 - delta * ZOOM_STEP * 0.01;
+
+    zoomAround(cx, cy, factor);
+    updateMathPanel();
+    draw();
+
+    // Revert mode label after a short idle
+    clearTimeout(panel._zoomTimer);
+    panel._zoomTimer = setTimeout(() => setMode('idle'), 600);
+  }, { passive: false });
+
+  // Reset
+  document.getElementById('btn-reset').addEventListener('click', fit);
+
+  // Resize
+  const ro = new ResizeObserver(resizeCanvas);
+  ro.observe(panel);
+
+  // ── Init ───────────────────────────────────────────────
+
+  resizeCanvas();
+  fit();
+
+</script>
+</body>
+</html>
